@@ -34,15 +34,15 @@ func main(){
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(file_srv))
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){
+	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request){
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 	
-	mux.HandleFunc("/metrics", apiCfg.handlerMetrics)
+	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 
-	mux.HandleFunc("/reset", apiCfg.handlerReset)
+	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("HTTP server ListenAndServe: %v", err)
@@ -52,7 +52,14 @@ func main(){
 
 //handler to show number of fileserverHits
 func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request){
-	metricsText := fmt.Sprintf("Hits: %v", cfg.fileserverHits.Load())
+	w.Header().Set("Content-Type", "text/html")
+	metricsText := fmt.Sprintf(`
+<html>
+  <body>
+    <h1>Welcome, Chirpy Admin</h1>
+    <p>Chirpy has been visited %d times!</p>
+  </body>
+</html>`, cfg.fileserverHits.Load())
 	w.Write([]byte(metricsText))
 }
 
