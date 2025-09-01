@@ -9,11 +9,17 @@ import (
 	"encoding/json"
 	"strings"
 	"slices"
+	_ "github.com/lib/pq"
+	"os"
+	"github.com/paul39-33/chirpy/internal/database"
+	"database/sql"
+	"github.com/joho/godotenv"
 )
 
 //struct to keep track of number of requests
 type apiConfig struct {
-	fileserverHits atomic.Int32
+	fileserverHits	atomic.Int32
+	dbQueries		*database.Queries
 }
 
 //json error struct
@@ -43,8 +49,20 @@ func cleanProfanity(text string) string{
 }
 
 func main(){
+	//load .env file to environment variables
+	godotenv.Load()
+	//get db url from .env file
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Error connecting to sql: %v", err)
+	}
+	dbQueries := database.New(db)
+
 	mux := http.NewServeMux()
-	apiCfg := apiConfig{}
+	apiCfg := apiConfig{
+		dbQueries: dbQueries,
+	}
 
 	//create a server variable
 	srv := http.Server{
