@@ -4,3 +4,6 @@ VALUES (
     $1
 )
 RETURNING *;
+
+-- name: ResetUser :exec
+TRUNCATE users CASCADE;
