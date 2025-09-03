@@ -9,6 +9,7 @@ import (
 	"time"
 	"encoding/json"
 	"log"
+	"unicode/utf8"
 )
 
 //struct to keep track of number of requests
@@ -24,6 +25,14 @@ type User struct {
 	CreatedAt	time.Time `json:"created_at"`
 	UpdatedAt	time.Time `json:"updated_at"`
 	Email		string `json:"email"`
+}
+
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }
 
 //increments fileserverHits every time its called
@@ -97,4 +106,49 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request){
 	}
 
 	respondWithJSON(w, 201, createdUser)
+}
+
+func (cfg *apiConfig) handlerCreateChirps(w http.ResponseWriter, r *http.Request){
+	type parameters struct {
+		Body	string	`json:"body"`
+		UserID	uuid.UUID	`json:"user_id"`
+	}
+	params := parameters{}
+
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&params); err != nil {
+		log.Printf("Error decoding params.body: %v", err)
+		respondWithError(w, 400, "Error decoding json")
+		return
+	}
+
+	//count the length of the Body characters
+	runeCount := utf8.RuneCountInString(params.Body)
+	if runeCount == 0 || runeCount > 140 {
+		log.Printf("Invalid body length!")
+		respondWithError(w, http.StatusBadRequest, "Invalid chirp input!")
+		return
+	}
+
+	//clean profanity texts
+	params.Body = cleanProfanity(params.Body)
+
+	chirp, err := cfg.dbQueries.CreateChirps(r.Context(), database.CreateChirpsParams{
+		Body: params.Body,
+		UserID: params.UserID,
+	})
+	if err != nil {
+		log.Printf("Error creating chirp: %v", err)
+		respondWithError(w, 400, "Error creating chirp")
+		return
+	}
+	createdChirp := Chirp{
+		ID: chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body: chirp.Body,
+		UserID: chirp.UserID,
+	}
+
+	respondWithJSON(w, 201, createdChirp)
 }

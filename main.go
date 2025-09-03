@@ -51,6 +51,8 @@ func main(){
 
 	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
 
+	mux.HandleFunc("POST /api/chirps", apiCfg.handlerCreateChirps)
+
 	
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
