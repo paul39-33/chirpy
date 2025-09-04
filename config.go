@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"log"
 	"unicode/utf8"
+	"errors"
+	"database/sql"
 )
 
 //struct to keep track of number of requests
@@ -151,4 +153,62 @@ func (cfg *apiConfig) handlerCreateChirps(w http.ResponseWriter, r *http.Request
 	}
 
 	respondWithJSON(w, 201, createdChirp)
+}
+
+//get all chirps
+func(cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request){
+	getChirps, err := cfg.dbQueries.GetChirps(r.Context())
+	if err != nil {
+		log.Printf("Error getting chirps: %v", err)
+		respondWithError(w, 400, "Error getting chirps")
+		return
+	}
+	
+	resp := make([]Chirp, len(getChirps))
+	for i, c := range getChirps {
+		resp[i] = Chirp{
+			ID:	c.ID,
+			CreatedAt:	c.CreatedAt,
+			UpdatedAt:	c.UpdatedAt,
+			Body:	c.Body,
+			UserID:	c.UserID,
+		}
+	}
+	respondWithJSON(w, 200, resp)
+}
+
+//get specific chirp by id
+func(cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request){
+	chirpID := r.PathValue("chirpID")
+	
+	//parse ID from string to uuid
+	id, err := uuid.Parse(chirpID)
+	if err != nil {
+		log.Printf("Error parsing chirp ID from string to UUID: %v", err)
+		respondWithError(w, 400, "Error parsing chirp ID")
+		return
+	}
+
+	chirp, err := cfg.dbQueries.GetChirp(r.Context(), id)
+	//if the error is because no matching chirp is found
+	if errors.Is(err, sql.ErrNoRows){
+		log.Printf("No matching chirp found: %v", err)
+		respondWithError(w, 404, "Matching chirp not found")
+		return
+	}
+	if err != nil {
+		log.Printf("Error getting chirp by id: %v", err)
+		respondWithError(w, 400, "Error getting chirp")
+		return
+	}
+
+	resp := Chirp{
+		ID: chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body: chirp.Body,
+		UserID: chirp.UserID,
+	}
+
+	respondWithJSON(w, 200, resp)
 }
