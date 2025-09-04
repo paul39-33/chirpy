@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 	"errors"
 	"database/sql"
+	"github.com/paul39-33/chirpy/internal/auth"
 )
 
 //struct to keep track of number of requests
@@ -81,7 +82,8 @@ func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request){
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request){
 	type parameters struct {
-		Email string `json:"email"`
+		Password 	string `json:"password"`
+		Email 		string `json:"email"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -93,7 +95,17 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	user, err := cfg.dbQueries.CreateUser(r.Context(), params.Email)
+	hashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		log.Printf("Error hashing password: %v", err)
+		respondWithError(w, 400, "Error hashing password")
+		return
+	}
+
+	user, err := cfg.dbQueries.CreateUser(r.Context(), database.CreateUserParams{
+		HashedPassword: hashedPassword,
+		Email: params.Email,
+	})
 	if err != nil {
 		log.Printf("Error decoding request: %v", err)
 		respondWithError(w, 400, "Error creating user")
@@ -112,7 +124,7 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request){
 
 func (cfg *apiConfig) handlerCreateChirps(w http.ResponseWriter, r *http.Request){
 	type parameters struct {
-		Body	string	`json:"body"`
+		Body	string		`json:"body"`
 		UserID	uuid.UUID	`json:"user_id"`
 	}
 	params := parameters{}
@@ -211,4 +223,42 @@ func(cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request){
 	}
 
 	respondWithJSON(w, 200, resp)
+}
+
+func(cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request){
+	type parameters struct{
+		Password	string `json:"password"`
+		Email		string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	if err := decoder.Decode(&params); err != nil {
+		log.Printf("Error decoding request: %v", err)
+		respondWithError(w, 400, "Error decoding request")
+		return
+	}
+
+	user, err := cfg.dbQueries.UserLogin(r.Context(), params.Email)
+	if err != nil {
+		log.Printf("Error getting password from database: %v", err)
+		respondWithError(w, 400, "Error getting user")
+		return
+	}
+
+	//compare pwFromDatabase with the password input
+	if err = auth.CheckPasswordHash(params.Password, user.HashedPassword); err != nil {
+		log.Printf("Incorrect email or password")
+		respondWithError(w, 401, "Incorrect email or password")
+		return
+	}
+
+	userInfo := User{
+		ID: user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+	}
+
+	respondWithJSON(w, 200, userInfo)
 }

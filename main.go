@@ -55,6 +55,8 @@ func main(){
 
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handlerGetChirp)
 
+	mux.HandleFunc("POST /api/login", apiCfg.handlerLogin)
+
 	
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
