@@ -11,13 +11,12 @@ import (
 )
 
 
-
-
 func main(){
 	//load .env file to environment variables
 	godotenv.Load()
 	//get db url from .env file
 	dbURL := os.Getenv("DB_URL")
+
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("Error connecting to sql: %v", err)
