@@ -20,6 +20,7 @@ type apiConfig struct {
 	fileserverHits	atomic.Int32
 	dbQueries		*database.Queries
 	platform		string
+	secret			string
 }
 
 //struct for user json data
@@ -28,6 +29,7 @@ type User struct {
 	CreatedAt	time.Time `json:"created_at"`
 	UpdatedAt	time.Time `json:"updated_at"`
 	Email		string `json:"email"`
+	Token		string `json:"token"`
 }
 
 type Chirp struct {
@@ -123,9 +125,23 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request){
 }
 
 func (cfg *apiConfig) handlerCreateChirps(w http.ResponseWriter, r *http.Request){
+	//get user token
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("Error getting user token: %v", err)
+		respondWithError(w, 400, "Error validating token")
+		return
+	}
+	//validate user token
+	userID, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		log.Printf("Error validating user token: %v", err)
+		respondWithError(w, 401, "Invalid token session")
+		return
+	}
+
 	type parameters struct {
 		Body	string		`json:"body"`
-		UserID	uuid.UUID	`json:"user_id"`
 	}
 	params := parameters{}
 
@@ -149,7 +165,7 @@ func (cfg *apiConfig) handlerCreateChirps(w http.ResponseWriter, r *http.Request
 
 	chirp, err := cfg.dbQueries.CreateChirps(r.Context(), database.CreateChirpsParams{
 		Body: params.Body,
-		UserID: params.UserID,
+		UserID: userID,
 	})
 	if err != nil {
 		log.Printf("Error creating chirp: %v", err)
@@ -227,8 +243,9 @@ func(cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request){
 
 func(cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request){
 	type parameters struct{
-		Password	string `json:"password"`
-		Email		string `json:"email"`
+		Password			string 		`json:"password"`
+		Email				string 		`json:"email"`
+		ExpiresInSeconds	*int		`json:"expires_in_seconds"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -237,6 +254,14 @@ func(cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request){
 		log.Printf("Error decoding request: %v", err)
 		respondWithError(w, 400, "Error decoding request")
 		return
+	}
+
+	//check if user insert an expires_in_seconds value or not and cap it at 1 hour
+	expiresIn := 3600 *time.Second
+	if params.ExpiresInSeconds != nil {
+		if *params.ExpiresInSeconds <= 3600 {
+			expiresIn = time.Duration(*params.ExpiresInSeconds) *time.Second
+		}
 	}
 
 	user, err := cfg.dbQueries.UserLogin(r.Context(), params.Email)
@@ -253,11 +278,20 @@ func(cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
+	//create a token after successful login
+	token, err := auth.MakeJWT(user.ID, cfg.secret, expiresIn)
+	if err != nil {
+		log.Printf("Error creating token: %v", err)
+		respondWithError(w, 400, "Error creating token")
+		return
+	}
+
 	userInfo := User{
 		ID: user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
+		Token: token,
 	}
 
 	respondWithJSON(w, 200, userInfo)

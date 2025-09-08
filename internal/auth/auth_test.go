@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 	"github.com/google/uuid"
+	"net/http"
 )
 
 //check success path
@@ -92,5 +93,33 @@ func TestValidateJWT_WrongSecret(t *testing.T){
 
 	if _, err := ValidateJWT(tok, "secret2"); err == nil {
 		t.Fatalf("expected error for wrong secret")
+	}
+}
+
+func TestGetBearerToken_success (t *testing.T){
+	headers := make(http.Header)
+
+	headers.Add("Content-Type", "application/json")
+	headers.Add("X-Custom-Header", "value1")
+	headers.Add("Authorization", "Bearer SOME_SECRET_TOKEN")
+
+	token, err := GetBearerToken(headers)
+	if err != nil {
+		t.Fatalf("GetBearerToken error: %v", err)
+	}
+	if token != "SOME_SECRET_TOKEN" {
+		t.Fatalf("error expected %v, got %v", "SOME_SECRET_TOKEN", token)
+	}
+}
+
+func TestGetBearerToken_empty (t *testing.T){
+	headers := make(http.Header)
+
+	headers.Add("Content-Type", "application/json")
+	headers.Add("X-Custom-Header", "value1")
+
+	_, err := GetBearerToken(headers)
+	if err == nil {
+		t.Fatalf("expected error for empty bearer token")
 	}
 }

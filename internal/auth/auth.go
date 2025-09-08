@@ -7,6 +7,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"fmt"
+	"strings"
+	"net/http"
 )
 
 func HashPassword(password string) (string, error){
@@ -31,11 +33,6 @@ func CheckPasswordHash(password, hash string) error {
 }
 
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error){
-	/*
-	//get secretkey
-	secretKey := os.Getenv("SECRET_KEY")
-	*/
-
 	//create custom claims for token creation
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:		"chirpy",
@@ -81,4 +78,18 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error){
 		return uuid.Nil, err
 	}
 	return id, nil
+}
+
+func GetBearerToken(headers http.Header) (string, error){
+	//get authorization header
+	auth_header := headers.Get("Authorization")
+	//if the authorization header doesn't exist return an error
+	if auth_header == "" {
+		log.Printf("No Authorization field")
+		return "", fmt.Errorf("No authorization field found")
+	}
+	//only take the TOKEN_STRING from the "Bearer TOKEN_STRING" format
+	auth_headers := strings.Fields(auth_header)
+	token_string := auth_headers[1]
+	return token_string, nil
 }

@@ -14,8 +14,9 @@ import (
 func main(){
 	//load .env file to environment variables
 	godotenv.Load()
-	//get db url from .env file
+	//get db url and secret from .env
 	dbURL := os.Getenv("DB_URL")
+	secret := os.Getenv("SECRET")
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -28,6 +29,7 @@ func main(){
 	apiCfg := apiConfig{
 		dbQueries: dbQueries,
 		platform: platform,
+		secret:	secret,
 	}
 
 	//create a server variable
