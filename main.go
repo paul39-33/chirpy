@@ -66,6 +66,8 @@ func main(){
 
 	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.handlerDeleteChirp)
 
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlerUpgradeUser)
+
 	
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {

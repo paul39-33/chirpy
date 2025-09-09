@@ -29,6 +29,7 @@ type UserLogin struct {
 	CreatedAt		time.Time `json:"created_at"`
 	UpdatedAt		time.Time `json:"updated_at"`
 	Email			string `json:"email"`
+	IsChirpyRed		bool `json:"is_chirpy_red"`
 	Token			string `json:"token"`
 	RefreshToken	string `json:"refresh_token"`
 }
@@ -38,6 +39,7 @@ type User struct {
 	CreatedAt		time.Time `json:"created_at"`
 	UpdatedAt		time.Time `json:"updated_at"`
 	Email			string `json:"email"`
+	IsChirpyRed		bool `json:"is_chirpy_red"`
 }
 
 type Chirp struct {
@@ -310,6 +312,7 @@ func(cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request){
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 		Token: token,
 		RefreshToken: refreshToken,
 	}
@@ -443,6 +446,7 @@ func(cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
 	resp := User{
 		ID: userInfo.ID,
 		Email: userInfo.Email,
+		IsChirpyRed: userInfo.IsChirpyRed,
 	}
 
 	respondWithJSON(w, 200, resp)
@@ -502,4 +506,52 @@ func(cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondWithJSON(w, 204, "chirp removed")
+}
+
+func(cfg *apiConfig) handlerUpgradeUser(w http.ResponseWriter, r *http.Request) {
+	type Data struct {
+		UserID	string `json:"user_id"`
+	}
+	
+	type parameters struct {
+		Event	string	`json:"event"`
+		Data	Data	`json:"data"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	if err := decoder.Decode(&params); err != nil {
+		log.Printf("Error decoding request: %v", err)
+		respondWithError(w, 400, "Error decoding request")
+		return
+	}
+
+	if params.Event != "user.upgraded" {
+		respondWithJSON(w, 204, "")
+		return
+	}
+
+	
+	//parse user ID from string to uuid
+	id, err := uuid.Parse(params.Data.UserID)
+	if err != nil {
+		log.Printf("Error parsing user ID from string to UUID: %v", err)
+		respondWithError(w, 400, "Error parsing user ID")
+		return
+	}
+
+	err = cfg.dbQueries.UpgradeUser(r.Context(), id)
+	//if the error is because no matching user ID is found
+	if errors.Is(err, sql.ErrNoRows){
+		log.Printf("No matching user ID found: %v", err)
+		respondWithError(w, 404, "user id not found")
+		return
+	}
+	if err != nil {
+		log.Printf("error upgrading user: %v", err)
+		respondWithError(w, 404, "error upgrading user")
+		return
+	}
+
+	respondWithJSON(w, 204, "")
 }
