@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"net/http"
+	"crypto/rand"
+	"encoding/hex"
 )
 
 func HashPassword(password string) (string, error){
@@ -92,4 +94,17 @@ func GetBearerToken(headers http.Header) (string, error){
 	auth_headers := strings.Fields(auth_header)
 	token_string := auth_headers[1]
 	return token_string, nil
+}
+
+func MakeRefreshToken() (string, error) {
+	//generate random key and token
+	key := make([]byte, 32)
+	_, err := rand.Read(key)
+	if err != nil {
+		log.Printf("Error creating refresh token: %v", err)
+		return "", fmt.Errorf("Failed creating refresh token")
+	}
+
+	key_string := hex.EncodeToString(key)
+	return key_string, nil
 }

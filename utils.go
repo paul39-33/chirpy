@@ -17,3 +17,4 @@ func cleanProfanity(text string) string{
 	joinText := strings.Join(textFields, " ")
 	return joinText
 }
+

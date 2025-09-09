@@ -23,13 +23,21 @@ type apiConfig struct {
 	secret			string
 }
 
-//struct for user json data
+//struct for userlogin json data
+type UserLogin struct {
+	ID 				uuid.UUID `json:"id"`
+	CreatedAt		time.Time `json:"created_at"`
+	UpdatedAt		time.Time `json:"updated_at"`
+	Email			string `json:"email"`
+	Token			string `json:"token"`
+	RefreshToken	string `json:"refresh_token"`
+}
+
 type User struct {
-	ID 			uuid.UUID `json:"id"`
-	CreatedAt	time.Time `json:"created_at"`
-	UpdatedAt	time.Time `json:"updated_at"`
-	Email		string `json:"email"`
-	Token		string `json:"token"`
+	ID 				uuid.UUID `json:"id"`
+	CreatedAt		time.Time `json:"created_at"`
+	UpdatedAt		time.Time `json:"updated_at"`
+	Email			string `json:"email"`
 }
 
 type Chirp struct {
@@ -245,7 +253,6 @@ func(cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request){
 	type parameters struct{
 		Password			string 		`json:"password"`
 		Email				string 		`json:"email"`
-		ExpiresInSeconds	*int		`json:"expires_in_seconds"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -254,14 +261,6 @@ func(cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request){
 		log.Printf("Error decoding request: %v", err)
 		respondWithError(w, 400, "Error decoding request")
 		return
-	}
-
-	//check if user insert an expires_in_seconds value or not and cap it at 1 hour
-	expiresIn := 3600 *time.Second
-	if params.ExpiresInSeconds != nil {
-		if *params.ExpiresInSeconds <= 3600 {
-			expiresIn = time.Duration(*params.ExpiresInSeconds) *time.Second
-		}
 	}
 
 	user, err := cfg.dbQueries.UserLogin(r.Context(), params.Email)
@@ -278,21 +277,229 @@ func(cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	//create a token after successful login
-	token, err := auth.MakeJWT(user.ID, cfg.secret, expiresIn)
+	//access token expire duration
+	accessTokenExp := 1 *time.Hour
+	//create an access token after successful login
+	token, err := auth.MakeJWT(user.ID, cfg.secret, accessTokenExp)
 	if err != nil {
-		log.Printf("Error creating token: %v", err)
-		respondWithError(w, 400, "Error creating token")
+		log.Printf("Error creating access token: %v", err)
+		respondWithError(w, 400, "Error creating access token")
 		return
 	}
 
-	userInfo := User{
+	//create a refresh token with 60 days expiration time
+	refreshTokenExp := (60 * 24) *time.Hour
+
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		log.Printf("Error creating refresh token: %v", err)
+		respondWithError(w, 400, "Error creating refresh token")
+		return
+	}
+
+	//store refresh token in DB
+	_, err = cfg.dbQueries.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		Token: refreshToken,
+		UserID: user.ID,
+		UpdatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(refreshTokenExp),
+	})
+
+	userInfo := UserLogin{
 		ID: user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
 		Token: token,
+		RefreshToken: refreshToken,
 	}
 
 	respondWithJSON(w, 200, userInfo)
+}
+
+func(cfg *apiConfig) handlerRefresh(w http.ResponseWriter, r *http.Request){
+	//get refresh token from token bearer
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("Error getting refresh token from header: %v", err)
+		respondWithError(w, 400, "Error getting refresh token info")
+		return
+	}
+
+	info, err := cfg.dbQueries.GetUserFromRefreshToken(r.Context(), refreshToken)
+	//if the error is because no result found
+	if errors.Is(err, sql.ErrNoRows){
+		log.Printf("No matching refresh token found: %v", err)
+		respondWithError(w, 401, "Error invalid token")
+		return
+	}
+	if err != nil{
+		log.Printf("Error getting user from refresh token: %v", err)
+		respondWithError(w, 500, "Error getting user info")
+		return
+	}
+
+	//check if the refresh token has expired (revoked_at becomes NOT NULL = valid)
+	if info.RevokedAt.Valid || time.Now().After(info.ExpiresAt){
+		log.Printf("Refresh token already expired!")
+		respondWithError(w, 401, "refresh token expired")
+		return
+	}
+
+	//create new access token
+	new_token, err := auth.MakeJWT(info.UserID, cfg.secret, time.Hour)
+	if err != nil {
+		log.Printf("Error creating new access token: %v", err)
+		respondWithError(w, 400, "trouble creating new access token")
+		return
+	}
+
+	type response struct {
+		Token string `json:"token"`
+	}
+
+	resp := response{Token: new_token}
+
+	respondWithJSON(w, 200, resp)
+}
+
+func(cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request){
+	//get refresh token from token bearer
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("Error getting refresh token from header: %v", err)
+		respondWithError(w, 400, "Error getting refresh token info")
+		return
+	}
+
+	//call query to update the token in database to be revoked
+	err = cfg.dbQueries.RevokeRefreshToken(r.Context(), refreshToken)
+	if err != nil {
+		log.Printf("Error revoking refresh token: %v", err)
+		respondWithJSON(w, 400, "Error revoking refresh token")
+		return
+	}
+
+	respondWithJSON(w, 204, "refresh token has been revoked")
+}
+
+func(cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
+	//validate user
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("Error getting user token: %v", err)
+		respondWithError(w, 401, "Error validating token")
+		return
+	}
+	//validate user token
+	userID, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		log.Printf("Error validating user token: %v", err)
+		respondWithError(w, 401, "Invalid token session")
+		return
+	}
+
+	//decode the new email and password input
+	type parameters struct{
+		Password	string 	`json:"password"`
+		Email		string 	`json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	if err := decoder.Decode(&params); err != nil {
+		log.Printf("Error decoding request: %v", err)
+		respondWithError(w, 400, "Error decoding request")
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		log.Printf("Error hashing password: %v", err)
+		respondWithError(w, 400, "Error hashing password")
+		return
+	}
+
+	//update the user data in database
+	err = cfg.dbQueries.UpdateUser(r.Context(), database.UpdateUserParams{
+		HashedPassword: hashedPassword,
+		Email: params.Email,
+		ID: userID,
+	})
+	if err != nil {
+		log.Printf("Error updating user data : %v", err)
+		respondWithError(w, 400, "Error updating user data")
+		return
+	}
+
+	//get the new user data to print
+	userInfo, err := cfg.dbQueries.UserLogin(r.Context(), params.Email)
+	if err != nil {
+		log.Printf("Error getting user data: %v", err)
+		respondWithError(w, 400, "Error retrieving user data")
+		return
+	}
+
+	resp := User{
+		ID: userInfo.ID,
+		Email: userInfo.Email,
+	}
+
+	respondWithJSON(w, 200, resp)
+}
+
+func(cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	//validate user
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("Error getting user token: %v", err)
+		respondWithError(w, 401, "Error validating token")
+		return
+	}
+	//validate user token
+	userID, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		log.Printf("Error validating user token: %v", err)
+		respondWithError(w, 401, "Invalid token session")
+		return
+	}
+
+	chirpID := r.PathValue("chirpID")
+	
+	//parse ID from string to uuid
+	id, err := uuid.Parse(chirpID)
+	if err != nil {
+		log.Printf("Error parsing chirp ID from string to UUID: %v", err)
+		respondWithError(w, 400, "Error parsing chirp ID")
+		return
+	}
+
+	chirp, err := cfg.dbQueries.GetChirp(r.Context(), id)
+	//if the error is because no matching chirp is found
+	if errors.Is(err, sql.ErrNoRows){
+		log.Printf("No matching chirp found: %v", err)
+		respondWithError(w, 404, "Matching chirp not found")
+		return
+	}
+	if err != nil {
+		log.Printf("Error getting chirp by id: %v", err)
+		respondWithError(w, 400, "Error getting chirp")
+		return
+	}
+
+	//check if user ID is the same as the chirp's creator
+	if chirp.UserID != userID {
+		log.Printf("User has no access to chirp!")
+		respondWithError(w, 403, "chirp access forbidden")
+		return
+	}
+
+	err = cfg.dbQueries.DeleteChirp(r.Context(), id)
+	if err != nil {
+		log.Printf("Error deleting chirp: %v", err)
+		respondWithError(w, 400, "problem deleting chirp")
+		return
+	}
+
+	respondWithJSON(w, 204, "chirp removed")
 }

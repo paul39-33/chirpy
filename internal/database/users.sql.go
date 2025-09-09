@@ -7,6 +7,8 @@ package database
 
 import (
 	"context"
+
+	"github.com/google/uuid"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -42,6 +44,25 @@ TRUNCATE users CASCADE
 
 func (q *Queries) ResetUser(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, resetUser)
+	return err
+}
+
+const updateUser = `-- name: UpdateUser :exec
+UPDATE users
+SET
+    hashed_password = $1,
+    email = $2
+WHERE id = $3
+`
+
+type UpdateUserParams struct {
+	HashedPassword string
+	Email          string
+	ID             uuid.UUID
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
+	_, err := q.db.ExecContext(ctx, updateUser, arg.HashedPassword, arg.Email, arg.ID)
 	return err
 }
 
