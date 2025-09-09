@@ -108,3 +108,17 @@ func MakeRefreshToken() (string, error) {
 	key_string := hex.EncodeToString(key)
 	return key_string, nil
 }
+
+func GetAPIKey(headers http.Header) (string, error) {
+	//get auth header
+	auth_header := headers.Get("Authorization")
+	//if the authorization header doesn't exist return an error
+	if auth_header == "" {
+		log.Printf("No Authorization field")
+		return "", fmt.Errorf("No authorization field found")
+	}
+	//only take the key part from "Authorization: THE_KEY" format
+	auth_headers := strings.Fields(auth_header)
+	apiKey := auth_headers[1]
+	return apiKey, nil
+}

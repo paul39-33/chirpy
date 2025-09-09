@@ -17,6 +17,7 @@ func main(){
 	//get db url and secret from .env
 	dbURL := os.Getenv("DB_URL")
 	secret := os.Getenv("SECRET")
+	polkaKey := os.Getenv("POLKA_KEY")
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -30,6 +31,7 @@ func main(){
 		dbQueries: dbQueries,
 		platform: platform,
 		secret:	secret,
+		polkaKey: polkaKey,
 	}
 
 	//create a server variable

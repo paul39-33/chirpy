@@ -21,6 +21,7 @@ type apiConfig struct {
 	dbQueries		*database.Queries
 	platform		string
 	secret			string
+	polkaKey		string
 }
 
 //struct for userlogin json data
@@ -509,6 +510,20 @@ func(cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) 
 }
 
 func(cfg *apiConfig) handlerUpgradeUser(w http.ResponseWriter, r *http.Request) {
+	//validate polka api key
+	reqApiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		log.Printf("error getting api key: %v", err)
+		respondWithError(w, 401, "error getting api key")
+		return
+	}
+
+	if reqApiKey != cfg.polkaKey {
+		log.Printf("api key mismatch!")
+		respondWithError(w, 401, "api key mismatch!")
+		return
+	}
+
 	type Data struct {
 		UserID	string `json:"user_id"`
 	}
