@@ -166,7 +166,7 @@ func (cfg *apiConfig) handlerCreateChirps(w http.ResponseWriter, r *http.Request
 
 	//count the length of the Body characters
 	runeCount := utf8.RuneCountInString(params.Body)
-	if runeCount == 0 || runeCount > 140 {
+	if runeCount == 0 || runeCount > 280 {
 		log.Printf("Invalid body length!")
 		respondWithError(w, http.StatusBadRequest, "Invalid chirp input!")
 		return
