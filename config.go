@@ -13,6 +13,7 @@ import (
 	"errors"
 	"database/sql"
 	"github.com/paul39-33/chirpy/internal/auth"
+	"sort"
 )
 
 //struct to keep track of number of requests
@@ -196,24 +197,63 @@ func (cfg *apiConfig) handlerCreateChirps(w http.ResponseWriter, r *http.Request
 
 //get all chirps
 func(cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request){
-	getChirps, err := cfg.dbQueries.GetChirps(r.Context())
-	if err != nil {
-		log.Printf("Error getting chirps: %v", err)
-		respondWithError(w, 400, "Error getting chirps")
-		return
+	//get optional sort parameter from user
+	sortInput := r.URL.Query().Get("sort")
+	//get optional authorID parameter from user
+	authorID := r.URL.Query().Get("author_id")
+	//if user inserted an author ID
+	if authorID != "" {
+		id, err := uuid.Parse(authorID)
+		if err != nil {
+			log.Printf("Error parsing author ID from string to UUID: %v", err)
+			respondWithError(w, 400, "Error parsing author ID")
+			return
+		}
+		chirpsByAuthor, err := cfg.dbQueries.GetChirpsByAuthor(r.Context(), id)
+		if err != nil {
+			log.Printf("Error getting chirps: %v", err)
+			respondWithError(w, 400, "Error getting chirps")
+			return
+		}
+		
+		resp := make([]Chirp, len(chirpsByAuthor))
+		for i, c := range chirpsByAuthor {
+			resp[i] = Chirp{
+				ID:	c.ID,
+				CreatedAt:	c.CreatedAt,
+				UpdatedAt:	c.UpdatedAt,
+				Body:	c.Body,
+				UserID:	c.UserID,
+			}
+		}
+		respondWithJSON(w, 200, resp)
+	} else {
+		getChirps, err := cfg.dbQueries.GetChirps(r.Context())
+		if err != nil {
+			log.Printf("Error getting chirps: %v", err)
+			respondWithError(w, 400, "Error getting chirps")
+			return
+		}
+	
+		resp := make([]Chirp, len(getChirps))
+		for i, c := range getChirps {
+			resp[i] = Chirp{
+				ID:	c.ID,
+				CreatedAt:	c.CreatedAt,
+				UpdatedAt:	c.UpdatedAt,
+				Body:	c.Body,
+				UserID:	c.UserID,
+			}
+		}
+		//implement desc sorting if user specifies
+		if sortInput == "desc" {
+			sort.Slice(resp, func(i, j int) bool { return resp[i].CreatedAt.After(resp[j].CreatedAt) })
+		}
+	//if no specific input or if input is "asc" then return in asc order
+	respondWithJSON(w, 200, resp)
+		
 	}
 	
-	resp := make([]Chirp, len(getChirps))
-	for i, c := range getChirps {
-		resp[i] = Chirp{
-			ID:	c.ID,
-			CreatedAt:	c.CreatedAt,
-			UpdatedAt:	c.UpdatedAt,
-			Body:	c.Body,
-			UserID:	c.UserID,
-		}
-	}
-	respondWithJSON(w, 200, resp)
 }
 
 //get specific chirp by id
